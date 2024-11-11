@@ -13,7 +13,7 @@ def start(core:VACore):
     manifest = {
         "name": "Триггер скриптов Home Assistant",
         "version": "1.0",
-        "require_online": False,
+        "require_online": True,
 
         "default_options": {
             "hassio_url": "http://hassio.lan:8123/",
