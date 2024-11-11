@@ -13,7 +13,7 @@ def start(core:VACore):
     manifest = {
         "name": "Триггер скриптов Home Assistant",
         "version": "1.0",
-        "require_online": True,
+        "require_online": False,
 
         "default_options": {
             "hassio_url": "http://hassio.lan:8123/",
@@ -29,6 +29,22 @@ def start(core:VACore):
 
 def start_with_options(core:VACore, manifest:dict):
     pass
+    
+def exec_script(core:VACore,script,hassio_scripts):
+   
+    options = core.plugin_options(modname) 
+    
+    import requests
+
+    url = options["hassio_url"] + "api/services/script/" + str(script)
+    headers = {"Authorization": "Bearer " + options["hassio_key"]}
+    res = requests.post(url, headers=headers) # выполняем скрипт
+    script_desc = str(hassio_scripts[script]["description"]) # бонус: ищем что ответить пользователю из описания скрипта
+    if "ttsreply(" in script_desc and ")" in script_desc.split("ttsreply(")[1]: # обходимся без re :^)
+        core.play_voice_assistant_speech(script_desc.split("ttsreply(")[1].split(")")[0])
+    else: # если в описании ответа нет, выбираем случайный ответ по умолчанию
+        core.play_voice_assistant_speech(options["default_reply"][random.randint(0, len(options["default_reply"]) - 1)])
+
 
 def hassio_run_script(core:VACore, phrase:str):
 
@@ -46,25 +62,25 @@ def hassio_run_script(core:VACore, phrase:str):
         res = requests.get(url, headers=headers) # запрашиваем все доступные сервисы
         hassio_services = res.json()
         hassio_scripts = []
+        # print(hassio_services)
         for service in hassio_services: # ищем скрипты среди списка доступных сервисов
             if service["domain"] == "script":
                 hassio_scripts = service["services"]
                 break
 
-        no_script = True
-        for script in hassio_scripts:
-            if str(hassio_scripts[script]["name"]) == phrase: # ищем скрипт с подходящим именем
-                url = options["hassio_url"] + "api/services/script/" + str(script)
-                headers = {"Authorization": "Bearer " + options["hassio_key"]}
-                res = requests.post(url, headers=headers) # выполняем скрипт
-                script_desc = str(hassio_scripts[script]["description"]) # бонус: ищем что ответить пользователю из описания скрипта
-                if "ttsreply(" in script_desc and ")" in script_desc.split("ttsreply(")[1]: # обходимся без re :^)
-                    core.play_voice_assistant_speech(script_desc.split("ttsreply(")[1].split(")")[0])
-                else: # если в описании ответа нет, выбираем случайный ответ по умолчанию
-                    core.play_voice_assistant_speech(options["default_reply"][random.randint(0, len(options["default_reply"]) - 1)])
-                no_script = False
-                break
-        if no_script:
+        hassio_scripts_by_name = {}
+        
+        for script in hassio_scripts: # сформируем словарь для нечеткого поиска
+            key = str(hassio_scripts[script]["name"])
+            hassio_scripts_by_name[key] = script
+        
+        res = core.find_best_cmd_with_fuzzy(phrase,hassio_scripts_by_name,True) #сделаем вызов нечеткого поиска
+        # print("res:" + res)
+        if res is not None: #если нечеткий поиск вернул результат
+            keyall, probability, rest_phrase = res
+            script = hassio_scripts_by_name[keyall]
+            exec_script(core,script,hassio_scripts)
+        else: 
             core.play_voice_assistant_speech("Не могу помочь с этим")
 
     except:
